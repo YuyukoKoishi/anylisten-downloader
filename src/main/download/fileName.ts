@@ -6,6 +6,13 @@ const MULTI_SPACE_RXP = /\s+/g
 const MAX_LENGTH = 120
 const SIZE_UNITS = ['B', 'KB', 'MB', 'GB']
 
+// Windows 保留设备名（不区分大小写），作为文件名会导致写入失败
+const RESERVED_NAMES = new Set([
+  'CON', 'PRN', 'AUX', 'NUL',
+  'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+  'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9',
+])
+
 export const sanitizeFileName = (name: string): string => {
   let stripped = ''
   for (const char of name) {
@@ -18,7 +25,9 @@ export const sanitizeFileName = (name: string): string => {
     .slice(0, MAX_LENGTH)
     .replace(TRAILING_RXP, '')
     .trim()
-  return cleaned || 'unknown'
+  if (!cleaned) return 'unknown'
+  if (RESERVED_NAMES.has(cleaned.toUpperCase())) return `${cleaned}_`
+  return cleaned
 }
 
 export const buildFileName = (template: string, vars: Record<string, string>): string => {

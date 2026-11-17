@@ -13,6 +13,7 @@ const DEFAULT_QUALITY = '320k'
 const DEFAULT_TEMPLATE = '{name} - {singer}'
 const DEFAULT_SOURCE = 'netease'
 const DEFAULT_COUNT = 20
+const DOWNLOAD_TIMEOUT_MS = 300_000
 
 interface DownloadConfig {
   apiBase: string
@@ -104,7 +105,8 @@ const downloadAndSave = async (
   })
   if (!dir) return
 
-  const resp = await request(url, { needRaw: true, timeout: 0 })
+  // 显式超时而非依赖 timeout:0 的未定义语义；大文件留足余量
+  const resp = await request(url, { needRaw: true, timeout: DOWNLOAD_TIMEOUT_MS })
   if (resp.statusCode != null && resp.statusCode !== 200) {
     throw new Error(`HTTP ${resp.statusCode}`)
   }

@@ -98,12 +98,14 @@ const downloadAndSave = async (
   })
   const fileName = `${baseName}.${ext}`
 
-  const dir = await app.showSaveDialog({
+  // 用真正的「另存为」文件窗口：canSelectFolder 会让窗口退化为选择文件夹，
+  // 并把 defaultFileName 当成要进入的目录，导致「文件夹不存在」。
+  // 非文件夹模式下返回的是完整文件路径，写入时 name 传空串即按该路径落盘。
+  const filePath = await app.showSaveDialog({
     title: t('download.saveTitle'),
     defaultFileName: fileName,
-    canSelectFolder: true,
   })
-  if (!dir) return
+  if (!filePath) return
 
   // 显式超时而非依赖 timeout:0 的未定义语义；大文件留足余量
   const resp = await request(url, { needRaw: true, timeout: DOWNLOAD_TIMEOUT_MS })
@@ -113,12 +115,13 @@ const downloadAndSave = async (
   const raw = resp.raw
   if (!raw || raw.length === 0) throw new Error('empty response')
 
-  await app.writeSaveDialogFile(dir, fileName, raw)
-  console.log(`[download] saved ${fileName} (${actualQuality}, ${raw.length} bytes)`)
+  const savedPath = await app.writeSaveDialogFile(filePath, '', raw)
+  const savedName = savedPath.split(/[/\\]/).pop() || fileName
+  console.log(`[download] saved ${savedPath} (${actualQuality}, ${raw.length} bytes)`)
 
   void app.showMessage(
     t('download.done', {
-      fileName,
+      fileName: savedName,
       quality: qualityLabel(actualQuality),
       size: formatSize(raw.length),
     }),

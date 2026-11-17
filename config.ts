@@ -78,6 +78,27 @@ const config: ExtensionConfig = {
         type: 'input',
         default: '{name} - {singer}',
       },
+      {
+        field: 'embedCover',
+        name: '{settings.embedCover}',
+        description: '{settings.embedCoverDescription}',
+        type: 'boolean',
+        default: true,
+      },
+      {
+        field: 'embedLyric',
+        name: '{settings.embedLyric}',
+        description: '{settings.embedLyricDescription}',
+        type: 'boolean',
+        default: false,
+      },
+      {
+        field: 'embedTranslatedLyric',
+        name: '{settings.embedTranslatedLyric}',
+        description: '{settings.embedTranslatedLyricDescription}',
+        type: 'boolean',
+        default: false,
+      },
     ],
     resource: [
       {

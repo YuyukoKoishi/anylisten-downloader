@@ -268,6 +268,15 @@ for (const q of ['128k', '320k', 'flac', 'flac24bit']) {
   check('歌词缺失时写入字节等于原始音频', write && write[3] === 4096, 'written=' + (write ? write[3] : 'none'))
 }
 
+{
+  const { host, calls, commands } = makeHost({ inputs: ['晴天 周杰伦'] })
+  runBundle(host, undefined, {})
+  await new Promise((r) => setTimeout(r, 250))
+  await commands.get('downloadMusic')()
+  const searching = calls.find((c) => c[0] === 'msg' && String(c[1]).includes('searching'))
+  check('搜索前给出非模态提示', !!searching, JSON.stringify(calls.filter((c) => c[0] === 'msg').map((c) => c[1])))
+}
+
 const failed = results.filter((r) => !r.pass)
 
 console.log('')

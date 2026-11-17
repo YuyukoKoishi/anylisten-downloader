@@ -217,6 +217,10 @@ export const downloadMusic = async (): Promise<void> => {
   const query = parseQuery(input ?? '')
   if (query == null) return
 
+  // 搜索是网络操作，约 1 秒。用非模态通知先给反馈，避免界面看起来卡住。
+  // showMessage 不传 modal 时走 notify 通道，不阻塞。
+  void app.showMessage(t('download.searching'), { type: 'info' })
+
   let candidates: SearchCandidate[]
   try {
     candidates = await searchMusic({

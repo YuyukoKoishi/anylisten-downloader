@@ -74,3 +74,44 @@ nameArg: ""                       <- 空串
 ```bash
 ffprobe -show_format -show_streams tagged.mp3 2>&1 | grep -i -E 'APIC|USLT|lyrics|cover'
 ```
+---
+
+## R11 已解决：改为直接调用聚合 API
+
+日期：2026-11-18
+
+原结论（音源脚本不提供 pic/lyric 导致取不到封面和歌词）已作废。
+聚合 API 本身就提供 `types=pic` 与 `types=lyric` 端点，
+搜索结果也带 `pic_id` / `lyric_id`，无需经过音源脚本。
+
+### 两个关键细节
+
+**1. 必须用 `pic_id`，不能用歌曲 `id`**
+
+| 传入 id | API 返回 | 图片链接结果 |
+|---|---|---|
+| 歌曲 `id`（2668397359） | `{"url":"...p2.music.126.net/.../2668397359.jpg"}` | **404 NoSuchKey**，返回 177 字节 JSON 错误体 |
+| `pic_id`（109951170413587092） | `{"url":"...p2.music.126.net/.../109951170413587092.jpg"}` | 200，25392 字节真实 JPEG |
+
+**2. 图片字节必须按魔数校验**
+
+失效链接返回的是 HTTP 404 + JSON 体，而 `content-type` 仍写着 `image/jpg`。
+若只看 content-type 会把 JSON 错误体当作封面嵌进音频。
+现按 JPEG/PNG/GIF/WebP 魔数校验，非图片一律按「未找到封面」跳过。
+
+### 实测结果
+
+晴天（id=2668397359，pic_id=109951170413587092）：
+
+- 封面：25392 字节 JPEG，成功
+- 歌词：1470 字符 LRC，成功
+- 嵌入 10.8 MB MP3：10831725 → 10859777 字节，末尾 64 KB 音频字节完全一致
+- `applied: ["cover","lyric"]`
+
+### 代码变更
+
+- `SearchCandidate` 增加 `picId` / `lyricId` 字段
+- `media.ts` 改为 `fetchCoverFromApi` / `fetchLyricFromApi`，直接请求聚合 API
+- 下载流程不再调用 `getMusicPic` / `getMusicLyric`
+
+isolate 桥的 pic/lyric 扩展保留但不再使用，将来若某脚本提供更优质的封面可切回。

@@ -31,11 +31,23 @@ const makeHost = (opts = {}) => {
       calls.push(['request', url.slice(0, 60), !!ropts?.needRaw])
       if (opts.requestOverride) return opts.requestOverride(url, ropts)
       if (ropts?.needRaw) {
-        // 封面请求返回 opts.coverSize，音频请求返回 opts.rawSize
         const isCover = url.includes('cover') || url.includes('big')
-        const size = isCover ? (opts.coverSize ?? 4096) : (opts.rawSize ?? 4096)
-        const b = new Uint8Array(size)
-        if (!isCover) { b[0] = 0x49; b[1] = 0x44; b[2] = 0x33 }
+        // 聚合 API 的 pic / lyric 端点返回 JSON
+        if (url.includes('types=pic')) {
+          return { statusCode: 200, body: { url: 'https://stub.test/cover.jpg' }, raw: new Uint8Array(), headers: {}, history: [url] }
+        }
+        if (url.includes('types=lyric')) {
+          const l = opts.lyricBody ?? { lyric: '[00:01.00]stub', tlyric: '' }
+          return { statusCode: 200, body: l, raw: new Uint8Array(), headers: {}, history: [url] }
+        }
+        if (isCover) {
+          const size = opts.coverSize ?? 4096
+          const b = new Uint8Array(size)
+          b[0] = 0xff; b[1] = 0xd8; b[2] = 0xff; b[3] = 0xe0 // 合法 JPEG 魔数
+          return { statusCode: 200, raw: b, body: b, headers: { 'content-type': 'image/jpeg' }, history: [url] }
+        }
+        const b = new Uint8Array(opts.rawSize ?? 4096)
+        b[0] = 0x49; b[1] = 0x44; b[2] = 0x33
         return { statusCode: 200, raw: b, body: b, headers: {}, history: [url] }
       }
       const res = await fetch(url)
@@ -230,14 +242,8 @@ for (const q of ['128k', '320k', 'flac', 'flac24bit']) {
   check('全部关闭时写入字节等于原始音频', write && write[3] === 4096, 'written=' + (write ? write[3] : 'none'))
 }
 {
-  const { host, calls, commands } = makeHost({ inputs: ['晴天 周杰伦'], embedLyric: true, requestOverride: async (url, o) => {
-    if (o?.needRaw && url.includes('cover')) return { statusCode: 200, raw: new Uint8Array(4096), headers: {}, history: [url] }
-    if (o?.needRaw) { const b = new Uint8Array(4096); b[0]=0x49;b[1]=0x44;b[2]=0x33; return { statusCode: 200, raw: b, body: b, headers: {}, history: [url] } }
-    const res = await fetch(url); const buf = new Uint8Array(await res.arrayBuffer())
-    let body = buf; try { body = JSON.parse(Buffer.from(buf).toString('utf8')) } catch {}
-    return { statusCode: res.status, body, raw: buf, headers: {}, history: [url] }
-  } })
-  runBundle(host, undefined, { lyric: { lyric: '[00:01.00]a', tlyric: '[00:01.00]b' } })
+  const { host, calls, commands } = makeHost({ inputs: ['晴天 周杰伦'], embedLyric: true })
+  runBundle(host, undefined, {})
   await new Promise((r) => setTimeout(r, 250))
   await commands.get('downloadMusic')()
   const write = calls.find((c) => c[0] === 'write')
@@ -253,8 +259,8 @@ for (const q of ['128k', '320k', 'flac', 'flac24bit']) {
   check('封面超限时音频仍落盘', !!state.saved, 'not saved')
 }
 {
-  const { host, calls, commands, state } = makeHost({ inputs: ['晴天 周杰伦'], embedLyric: true })
-  runBundle(host, undefined, { lyric: null })
+  const { host, calls, commands, state } = makeHost({ inputs: ['晴天 周杰伦'], embedLyric: true, lyricBody: { lyric: '', tlyric: '' } })
+  runBundle(host, undefined, {})
   await new Promise((r) => setTimeout(r, 250))
   await commands.get('downloadMusic')()
   const write = calls.find((c) => c[0] === 'write')

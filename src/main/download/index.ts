@@ -1,8 +1,8 @@
 import { app, command, configuration, console, request, t } from '../shared/hostAPI'
-import { getMusicLyric, getMusicPic, getMusicUrlWithQuality } from '../isolate'
+import { getMusicUrlWithQuality } from '../isolate'
 import { paginate, describeCandidate, rankCandidates, PAGE_SIZE } from './candidates'
 import { buildFileName, formatSize, inferExtension } from './fileName'
-import { fetchCover } from './media'
+import { fetchCoverFromApi, fetchLyricFromApi } from './media'
 import { embedTags } from './tags/index.ts'
 import type { EmbedPayload } from './tags/types.ts'
 import { parseQuery } from './parseQuery'
@@ -110,15 +110,20 @@ const pickCandidate = async (list: SearchCandidate[], initialPage = 0): Promise<
 }
 
 const collectMetadata = async (
-  musicInfo: AnyListen_API.MusicInfoOnline,
+  candidate: SearchCandidate,
   config: DownloadConfig
 ): Promise<{ payload: EmbedPayload; notes: string[] }> => {
   const payload: EmbedPayload = {}
   const notes: string[] = []
 
+  // 必须用 pic_id / lyric_id：用歌曲 id 取封面会拿到失效链接
+  const picId = candidate.picId || candidate.id
+  const lyricId = candidate.lyricId || candidate.id
+  const apiFetcher = async (url: string) => request(url, { needRaw: true, timeout: 30_000 })
+
   if (config.embedCover) {
-    const picUrl = await getMusicPic(musicInfo)
-    const result = await fetchCover(picUrl, async (url) => request(url, { needRaw: true, timeout: 30_000 }))
+    // 直接走聚合 API 的 pic 端点，不依赖音源脚本是否实现 pic 动作
+    const result = await fetchCoverFromApi(config.apiBase, config.searchSource, picId, apiFetcher)
     if (result.kind === 'ok') {
       payload.cover = result.cover
     } else if (result.reason === 'tooLarge') {
@@ -129,7 +134,7 @@ const collectMetadata = async (
   }
 
   if (config.embedLyric) {
-    const lyric = await getMusicLyric(musicInfo)
+    const lyric = await fetchLyricFromApi(config.apiBase, config.searchSource, lyricId, apiFetcher)
     if (lyric == null) {
       notes.push(t('download.lyricMissing'))
     } else {
@@ -177,7 +182,7 @@ const downloadAndSave = async (
   if (!raw || raw.length === 0) throw new Error('empty response')
 
   // 元数据：任何失败都降级为写原始音频，绝不让用户拿不到文件
-  const { payload, notes } = await collectMetadata(musicInfo, config)
+  const { payload, notes } = await collectMetadata(candidate, config)
   const tagged = embedTags(raw, payload)
   const output = tagged.data.length > 0 ? tagged.data : raw
   if (payload.cover || payload.lyric || payload.translatedLyric) {

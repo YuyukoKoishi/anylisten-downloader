@@ -53,6 +53,8 @@ const parseBody = (body: unknown): SearchCandidate[] => {
       artist,
       album: toText(raw.album),
       source: toText(raw.source),
+      picId: toText(raw.pic_id) || undefined,
+      lyricId: toText(raw.lyric_id) || undefined,
     }
   })
 }

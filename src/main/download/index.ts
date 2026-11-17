@@ -1,7 +1,10 @@
 import { app, command, configuration, console, request, t } from '../shared/hostAPI'
-import { getMusicUrlWithQuality } from '../isolate'
+import { getMusicLyric, getMusicPic, getMusicUrlWithQuality } from '../isolate'
 import { paginate, describeCandidate, rankCandidates, PAGE_SIZE } from './candidates'
 import { buildFileName, formatSize, inferExtension } from './fileName'
+import { fetchCover } from './media'
+import { embedTags } from './tags/index.ts'
+import type { EmbedPayload } from './tags/types.ts'
 import { parseQuery } from './parseQuery'
 import { qualityLabel } from './quality'
 import { searchMusic } from './search'
@@ -20,19 +23,44 @@ interface DownloadConfig {
   searchSource: string
   quality: string
   fileNameTemplate: string
+  embedCover: boolean
+  embedLyric: boolean
+  embedTranslatedLyric: boolean
   hasEnabledScript: boolean
 }
 
 const readConfig = async (): Promise<DownloadConfig> => {
-  const [enabledScripts, apiBase, searchSource, quality, fileNameTemplate] = await configuration.getConfigs<
-    [string[] | null, string | null, string | null, string | null, string | null]
-  >(['enabledScripts', 'apiBase', 'searchSource', 'quality', 'fileNameTemplate'])
+  const [enabledScripts, apiBase, searchSource, quality, fileNameTemplate, embedCover, embedLyric, embedTranslatedLyric] =
+    await configuration.getConfigs<
+      [
+        string[] | null,
+        string | null,
+        string | null,
+        string | null,
+        string | null,
+        boolean | null,
+        boolean | null,
+        boolean | null,
+      ]
+    >([
+      'enabledScripts',
+      'apiBase',
+      'searchSource',
+      'quality',
+      'fileNameTemplate',
+      'embedCover',
+      'embedLyric',
+      'embedTranslatedLyric',
+    ])
 
   return {
     apiBase: (apiBase || DEFAULT_API_BASE).trim(),
     searchSource: searchSource || DEFAULT_SOURCE,
     quality: quality || DEFAULT_QUALITY,
     fileNameTemplate: fileNameTemplate || DEFAULT_TEMPLATE,
+    embedCover: embedCover !== false,
+    embedLyric: embedLyric === true,
+    embedTranslatedLyric: embedTranslatedLyric === true,
     hasEnabledScript: Array.isArray(enabledScripts) && enabledScripts.length > 0,
   }
 }
@@ -81,6 +109,39 @@ const pickCandidate = async (list: SearchCandidate[], initialPage = 0): Promise<
   }
 }
 
+const collectMetadata = async (
+  musicInfo: AnyListen_API.MusicInfoOnline,
+  config: DownloadConfig
+): Promise<{ payload: EmbedPayload; notes: string[] }> => {
+  const payload: EmbedPayload = {}
+  const notes: string[] = []
+
+  if (config.embedCover) {
+    const picUrl = await getMusicPic(musicInfo)
+    const result = await fetchCover(picUrl, async (url) => request(url, { needRaw: true, timeout: 30_000 }))
+    if (result.kind === 'ok') {
+      payload.cover = result.cover
+    } else if (result.reason === 'tooLarge') {
+      notes.push(t('download.coverSkipped'))
+    } else {
+      notes.push(t('download.coverMissing'))
+    }
+  }
+
+  if (config.embedLyric) {
+    const lyric = await getMusicLyric(musicInfo)
+    if (lyric == null) {
+      notes.push(t('download.lyricMissing'))
+    } else {
+      if (lyric.lyric) payload.lyric = lyric.lyric
+      // 翻译开关独立生效；无原文时也允许单独写翻译
+      if (config.embedTranslatedLyric && lyric.tlyric) payload.translatedLyric = lyric.tlyric
+    }
+  }
+
+  return { payload, notes }
+}
+
 const downloadAndSave = async (
   candidate: SearchCandidate,
   config: DownloadConfig,
@@ -115,18 +176,26 @@ const downloadAndSave = async (
   const raw = resp.raw
   if (!raw || raw.length === 0) throw new Error('empty response')
 
-  const savedPath = await app.writeSaveDialogFile(filePath, '', raw)
-  const savedName = savedPath.split(/[/\\]/).pop() || fileName
-  console.log(`[download] saved ${savedPath} (${actualQuality}, ${raw.length} bytes)`)
+  // 元数据：任何失败都降级为写原始音频，绝不让用户拿不到文件
+  const { payload, notes } = await collectMetadata(musicInfo, config)
+  const tagged = embedTags(raw, payload)
+  const output = tagged.data.length > 0 ? tagged.data : raw
+  if (payload.cover || payload.lyric || payload.translatedLyric) {
+    if (tagged.applied.length === 0) notes.push(t('download.tagFailed'))
+  }
 
-  void app.showMessage(
-    t('download.done', {
-      fileName: savedName,
-      quality: qualityLabel(actualQuality),
-      size: formatSize(raw.length),
-    }),
-    { type: 'info' },
+  const savedPath = await app.writeSaveDialogFile(filePath, '', output)
+  const savedName = savedPath.split(/[/\\]/).pop() || fileName
+  console.log(
+    `[download] saved ${savedPath} (${actualQuality}, ${output.length} bytes, tags: ${tagged.applied.join('|') || 'none'})`,
   )
+
+  const doneText = t('download.done', {
+    fileName: savedName,
+    quality: qualityLabel(actualQuality),
+    size: formatSize(output.length),
+  })
+  void app.showMessage(notes.length > 0 ? `${doneText}\n${notes.join('\n')}` : doneText, { type: 'info' })
 }
 
 export const downloadMusic = async (): Promise<void> => {

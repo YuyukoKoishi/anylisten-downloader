@@ -18,6 +18,9 @@ const makeHost = (opts = {}) => {
     searchSource: 'netease',
     quality: opts.quality ?? '320k',
     fileNameTemplate: opts.template ?? '{name} - {singer}',
+    embedCover: opts.embedCover ?? false,
+    embedLyric: opts.embedLyric ?? false,
+    embedTranslatedLyric: opts.embedTranslatedLyric ?? false,
     importedScriptSources: [],
     enabledSourceLogout: false,
   }
@@ -28,8 +31,11 @@ const makeHost = (opts = {}) => {
       calls.push(['request', url.slice(0, 60), !!ropts?.needRaw])
       if (opts.requestOverride) return opts.requestOverride(url, ropts)
       if (ropts?.needRaw) {
-        const b = new Uint8Array(opts.rawSize ?? 4096)
-        b[0] = 0x49; b[1] = 0x44; b[2] = 0x33
+        // 封面请求返回 opts.coverSize，音频请求返回 opts.rawSize
+        const isCover = url.includes('cover') || url.includes('big')
+        const size = isCover ? (opts.coverSize ?? 4096) : (opts.rawSize ?? 4096)
+        const b = new Uint8Array(size)
+        if (!isCover) { b[0] = 0x49; b[1] = 0x44; b[2] = 0x33 }
         return { statusCode: 200, raw: b, body: b, headers: {}, history: [url] }
       }
       const res = await fetch(url)
@@ -63,9 +69,13 @@ const makeHost = (opts = {}) => {
   return { host, calls, commands, state }
 }
 
-const runBundle = (host, scriptSources = { wy: ['128k','320k','flac','flac24bit'] }) => {
+const runBundle = (host, scriptSources = { wy: ['128k','320k','flac','flac24bit'] }, media = {}) => {
   let code = fs.readFileSync(BUNDLE, 'utf8')
-  const inj = `var scripts = [{ id: 'inj', info: { name: 'inj', fileName: 'inj' }, destroy: async () => {}, setEnabledSourceLogout: async () => {}, sources: ${JSON.stringify(scriptSources)}, getMusicUrl: async (mi, t) => 'https://stub.test/a.mp3' }]`
+  const picExpr = media.pic === null ? 'null' : media.pic ? JSON.stringify(media.pic) : "'https://stub.test/cover.jpg'"
+  const lyricExpr = media.lyric === null ? 'null' : media.lyric
+    ? '({ lyric: ' + JSON.stringify(media.lyric.lyric ?? '') + ', tlyric: ' + JSON.stringify(media.lyric.tlyric ?? '') + ' })'
+    : "({ lyric: '[00:01.00]test', tlyric: '' })"
+  const inj = `var scripts = [{ id: 'inj', info: { name: 'inj', fileName: 'inj' }, destroy: async () => {}, setEnabledSourceLogout: async () => {}, sources: ${JSON.stringify(scriptSources)}, getMusicUrl: async (mi, t) => 'https://stub.test/a.mp3', getMusicPic: async () => ${picExpr}, getMusicLyric: async () => ${lyricExpr} }]`
   code = code.replace('var scripts = []', inj)
   const sb = {
     require: (n) => { if (n === 'any-listen') return host; throw new Error('no ' + n) },
@@ -202,7 +212,58 @@ for (const q of ['128k', '320k', 'flac', 'flac24bit']) {
   check('连续下载 3 次均落盘', writes === 3, 'writes=' + writes)
 }
 
+// ---- 阶段六：封面与歌词元数据 ----
+{
+  const { host, calls, commands, state } = makeHost({ inputs: ['晴天 周杰伦'], embedCover: true })
+  runBundle(host, undefined, {})
+  await new Promise((r) => setTimeout(r, 250))
+  await commands.get('downloadMusic')()
+  const write = calls.find((c) => c[0] === 'write')
+  check('封面开启时写入字节大于原始音频', write && write[3] > 4096, 'written=' + (write ? write[3] : 'none'))
+}
+{
+  const { host, calls, commands } = makeHost({ inputs: ['晴天 周杰伦'], embedCover: false, embedLyric: false })
+  runBundle(host, undefined, {})
+  await new Promise((r) => setTimeout(r, 250))
+  await commands.get('downloadMusic')()
+  const write = calls.find((c) => c[0] === 'write')
+  check('全部关闭时写入字节等于原始音频', write && write[3] === 4096, 'written=' + (write ? write[3] : 'none'))
+}
+{
+  const { host, calls, commands } = makeHost({ inputs: ['晴天 周杰伦'], embedLyric: true, requestOverride: async (url, o) => {
+    if (o?.needRaw && url.includes('cover')) return { statusCode: 200, raw: new Uint8Array(4096), headers: {}, history: [url] }
+    if (o?.needRaw) { const b = new Uint8Array(4096); b[0]=0x49;b[1]=0x44;b[2]=0x33; return { statusCode: 200, raw: b, body: b, headers: {}, history: [url] } }
+    const res = await fetch(url); const buf = new Uint8Array(await res.arrayBuffer())
+    let body = buf; try { body = JSON.parse(Buffer.from(buf).toString('utf8')) } catch {}
+    return { statusCode: res.status, body, raw: buf, headers: {}, history: [url] }
+  } })
+  runBundle(host, undefined, { lyric: { lyric: '[00:01.00]a', tlyric: '[00:01.00]b' } })
+  await new Promise((r) => setTimeout(r, 250))
+  await commands.get('downloadMusic')()
+  const write = calls.find((c) => c[0] === 'write')
+  check('歌词开启时音频被写入且字节增加', write && write[3] > 4096, 'written=' + (write ? write[3] : 'none'))
+}
+{
+  const { host, calls, commands, state } = makeHost({ inputs: ['晴天 周杰伦'], embedCover: true, coverSize: 409600 })
+  runBundle(host, undefined, { pic: 'https://stub.test/cover-big.jpg' })
+  await new Promise((r) => setTimeout(r, 250))
+  await commands.get('downloadMusic')()
+  const write = calls.find((c) => c[0] === 'write')
+  check('封面超过 300KB 时跳过附件', write && write[3] === 4096, 'written=' + (write ? write[3] : 'none'))
+  check('封面超限时音频仍落盘', !!state.saved, 'not saved')
+}
+{
+  const { host, calls, commands, state } = makeHost({ inputs: ['晴天 周杰伦'], embedLyric: true })
+  runBundle(host, undefined, { lyric: null })
+  await new Promise((r) => setTimeout(r, 250))
+  await commands.get('downloadMusic')()
+  const write = calls.find((c) => c[0] === 'write')
+  check('歌词缺失时音频仍落盘', !!state.saved, 'not saved')
+  check('歌词缺失时写入字节等于原始音频', write && write[3] === 4096, 'written=' + (write ? write[3] : 'none'))
+}
+
 const failed = results.filter((r) => !r.pass)
+
 console.log('')
 console.log('TOTAL', results.length, 'PASS', results.length - failed.length, 'FAIL', failed.length)
 fs.writeFileSync(path.resolve(HERE, '../../.integration-results.json'), JSON.stringify(results, null, 2))

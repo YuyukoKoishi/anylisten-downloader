@@ -59,14 +59,8 @@ const config: ExtensionConfig = {
         description: '{settings.searchSourceDescription}',
         type: 'selection',
         default: 'netease',
-        enum: ['netease', 'tencent', 'kugou', 'kuwo', 'migu'],
-        enumName: [
-          '{settings.sourceNetease}',
-          '{settings.sourceTencent}',
-          '{settings.sourceKugou}',
-          '{settings.sourceKuwo}',
-          '{settings.sourceMigu}',
-        ],
+        enum: ['netease'],
+        enumName: ['{settings.sourceNetease}'],
       },
       {
         field: 'quality',

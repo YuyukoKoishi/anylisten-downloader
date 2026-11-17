@@ -1,4 +1,4 @@
-import { setMusicUrlHandler } from './exposeObject'
+import { setMusicLyricHandler, setMusicPicHandler, setMusicUrlHandler } from './exposeObject'
 import { ipc } from './extensionObject'
 import { setScriptInfo } from './utils'
 import { fromUint8Array, toUint8Array } from './vendors/base64'
@@ -268,21 +268,51 @@ export const setupEnv = (scriptInfo: Omit<LXScriptInfo, 'id'>, rawScript: string
     async on(eventName: string, handler: (data: unknown) => Promise<unknown>) {
       if (!eventNames.includes(eventName)) throw new Error(`The event is not supported: ${eventName}`)
       switch (eventName) {
-        case EVENT_NAMES.request:
-          setMusicUrlHandler(async (musicInfo: any, type: string) => {
-            return (
-              handler
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                .call(globalThis.lx, { source: musicInfo.source, action: 'musicUrl', info: { type, musicInfo } })
-                .then((response) => {
-                  if (typeof response != 'string' || response.length > 2048 || !/^https?:/.test(response)) {
-                    throw new Error('Invalid response')
-                  }
-                  return response
-                })
-            )
+        case EVENT_NAMES.request: {
+          // 统一分派：musicUrl / pic / lyric 三种 action 共用同一个 lx 请求通道
+          const callLx = async (
+            action: 'musicUrl' | 'pic' | 'lyric',
+            musicInfo: Record<string, unknown>,
+            type?: string
+          ): Promise<unknown> => {
+            return handler.call(globalThis.lx, { source: musicInfo.source, action, info: { type, musicInfo } })
+          }
+
+          setMusicUrlHandler(async (musicInfo: Record<string, unknown>, type: string) => {
+            const response = await callLx('musicUrl', musicInfo, type)
+            if (typeof response != 'string' || response.length > 2048 || !/^https?:/.test(response)) {
+              throw new Error('Invalid response')
+            }
+            return response
+          })
+
+          // 封面：失败一律返回 null，由上层按「跳过」处理，不抛错
+          setMusicPicHandler(async (musicInfo: Record<string, unknown>) => {
+            try {
+              const response = await callLx('pic', musicInfo)
+              if (typeof response !== 'string' || !/^https?:/i.test(response)) return null
+              return response
+            } catch {
+              return null
+            }
+          })
+
+          // 歌词：失败一律返回 null
+          setMusicLyricHandler(async (musicInfo: Record<string, unknown>) => {
+            try {
+              const response = await callLx('lyric', musicInfo)
+              if (!response || typeof response !== 'object') return null
+              const raw = response as Record<string, unknown>
+              const lyric = typeof raw.lyric === 'string' ? raw.lyric : ''
+              const tlyric = typeof raw.tlyric === 'string' ? raw.tlyric : ''
+              if (!lyric && !tlyric) return null
+              return { lyric, tlyric }
+            } catch {
+              return null
+            }
           })
           break
+        }
         default:
           throw new Error(`The event is not supported: ${eventName}`)
       }

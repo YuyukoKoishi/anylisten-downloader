@@ -105,6 +105,8 @@ export const scripts: Array<{
   id: string
   destroy: () => Promise<void>
   getMusicUrl: (musicInfo: AnyListen_API.MusicInfoOnline, type: string) => Promise<string>
+  getMusicPic: (musicInfo: AnyListen_API.MusicInfoOnline) => Promise<string | null>
+  getMusicLyric: (musicInfo: AnyListen_API.MusicInfoOnline) => Promise<LXMusicLyricResult | null>
   setEnabledSourceLogout: (enabled: boolean) => Promise<void>
   sources: Record<string, string[]> | null
   info: LXScriptInfoFull
@@ -128,6 +130,12 @@ export const runScript = async (id: string, scriptInfo: LXScriptInfoFull, script
     },
     getMusicUrl: async (musicInfo: AnyListen_API.MusicInfoOnline, type: string) => {
       return isolate.remote.getMusicUrl(toLXMusicInfo(musicInfo), type)
+    },
+    getMusicPic: async (musicInfo: AnyListen_API.MusicInfoOnline) => {
+      return isolate.remote.getMusicPic(toLXMusicInfo(musicInfo))
+    },
+    getMusicLyric: async (musicInfo: AnyListen_API.MusicInfoOnline) => {
+      return isolate.remote.getMusicLyric(toLXMusicInfo(musicInfo))
     },
     setEnabledSourceLogout: async (enabled) => {
       await isolate.remote.setEnabledSourceLogout(enabled)
@@ -184,6 +192,46 @@ export const getMusicUrlWithQuality = async (
       )
       return getMusicUrlWithQuality(musicInfo, type, [...excludeIds, targetScript.id])
     })
+}
+
+// 宿主未记录每个脚本声明的 actions，只能按顺序逐个尝试；
+// 不支持的脚本会返回 null 或抛错，由调用方继续下一个。
+const nextScript = (excludeIds: string[]) => scripts.find((s) => !excludeIds.includes(s.id)) ?? null
+
+/**
+ * 封面：按脚本顺序尝试，全部失败返回 null（调用方按「跳过」处理）
+ */
+export const getMusicPic = async (
+  musicInfo: AnyListen_API.MusicInfoOnline,
+  excludeIds: string[] = []
+): Promise<string | null> => {
+  const targetScript = nextScript(excludeIds)
+  if (!targetScript) return null
+  try {
+    const pic = await targetScript.getMusicPic(musicInfo)
+    if (pic) return pic
+  } catch (error) {
+    console.error(`[${targetScript.info.name || targetScript.info.fileName} - pic] ${(error as Error).message}`)
+  }
+  return getMusicPic(musicInfo, [...excludeIds, targetScript.id])
+}
+
+/**
+ * 歌词：按脚本顺序尝试，全部失败返回 null
+ */
+export const getMusicLyric = async (
+  musicInfo: AnyListen_API.MusicInfoOnline,
+  excludeIds: string[] = []
+): Promise<LXMusicLyricResult | null> => {
+  const targetScript = nextScript(excludeIds)
+  if (!targetScript) return null
+  try {
+    const lyric = await targetScript.getMusicLyric(musicInfo)
+    if (lyric && (lyric.lyric || lyric.tlyric)) return lyric
+  } catch (error) {
+    console.error(`[${targetScript.info.name || targetScript.info.fileName} - lyric] ${(error as Error).message}`)
+  }
+  return getMusicLyric(musicInfo, [...excludeIds, targetScript.id])
 }
 
 export const updateEnabledSourceLogout = async (enabled: boolean) => {

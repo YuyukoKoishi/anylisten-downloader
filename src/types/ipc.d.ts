@@ -13,10 +13,18 @@ declare global {
     fileDesc: string
   }
 
+  interface LXMusicLyricResult {
+    lyric: string
+    tlyric: string
+  }
   interface IPCIsolateObject {
     setupEnv: (scriptInfo: LXScriptInfo, rawScript: string) => Promise<void>
     getMusicUrl: (musicInfo: unknown, type: string) => Promise<string>
     setEnabledSourceLogout: (enabled: boolean) => Promise<void>
+    /** 取封面 URL，无则返回 null */
+    getMusicPic: (musicInfo: unknown) => Promise<string | null>
+    /** 取歌词，无则返回 null */
+    getMusicLyric: (musicInfo: unknown) => Promise<LXMusicLyricResult | null>
   }
   interface IPCEXtensionRequestOptions {
     url: string

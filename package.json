@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "extension-kit --build",
+    "test": "node --test tests/*.test.ts",
     "pub": "extension-kit --publish"
   },
   "dependencies": {

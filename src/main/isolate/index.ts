@@ -166,6 +166,26 @@ export const getMusicUrl = async (
     })
 }
 
+export const getMusicUrlWithQuality = async (
+  musicInfo: AnyListen_API.MusicInfoOnline,
+  type: string,
+  excludeIds: string[] = []
+): Promise<{ url: string; quality: string }> => {
+  const [targetScript, targetType] = getTargetScriptByQuality(musicInfo, type, excludeIds)
+  return targetScript
+    .getMusicUrl(musicInfo, targetType)
+    .then(async (url) => {
+      url = await verifyUrl(url)
+      return { url, quality: targetType }
+    })
+    .catch(async (error) => {
+      console.error(
+        `[${targetScript.info.name || targetScript.info.fileName} - ${musicInfo.name}(${musicInfo.meta.source}, type: ${targetType})] ${(error as Error).message}`
+      )
+      return getMusicUrlWithQuality(musicInfo, type, [...excludeIds, targetScript.id])
+    })
+}
+
 export const updateEnabledSourceLogout = async (enabled: boolean) => {
   for (const script of scripts) {
     await script.setEnabledSourceLogout(enabled)

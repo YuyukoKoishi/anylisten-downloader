@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { sanitizeFileName, buildFileName, inferExtension } from '../src/main/download/fileName.ts'
+import { sanitizeFileName, buildFileName, inferExtension, formatSize } from '../src/main/download/fileName.ts'
 
 test('replaces illegal characters and collapses spaces', () => {
   assert.equal(sanitizeFileName('AC/DC: Live'), 'AC DC Live')
@@ -26,4 +26,10 @@ test('infers extension from quality', () => {
   assert.equal(inferExtension('wav'), 'wav')
   assert.equal(inferExtension('320k'), 'mp3')
   assert.equal(inferExtension('128k'), 'mp3')
+})
+test('formats byte sizes', () => {
+  assert.equal(formatSize(0), '0 B')
+  assert.equal(formatSize(512), '512 B')
+  assert.equal(formatSize(1536), '1.50 KB')
+  assert.equal(formatSize(5 * 1024 * 1024), '5.00 MB')
 })

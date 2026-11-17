@@ -1,4 +1,5 @@
 import { initCommand } from './command'
+import { initDownload } from './download'
 import { runScript, scripts, updateEnabledSourceLogout } from './isolate'
 import { initOnlineResource } from './onlineResource'
 import { app, configuration, console, t } from './shared/hostAPI'
@@ -86,4 +87,8 @@ initScripts().catch((error) => {
 
 initCommand().catch((error) => {
   console.error(`Failed to initialize commands: ${(error as Error).message}`)
+})
+
+initDownload().catch((error) => {
+  console.error(`Failed to initialize download command: ${(error as Error).message}`)
 })

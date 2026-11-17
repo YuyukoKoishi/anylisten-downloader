@@ -14,46 +14,59 @@ export interface SearchOptions {
 const MAX_ATTEMPTS = 3
 const BACKOFF_BASE_MS = 1000
 const DEFAULT_COUNT = 20
+const OK_STATUS = 200
 
-const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+const defaultSleep = async (ms: number): Promise<void> => {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+const toText = (value: unknown): string => {
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return ''
+}
 
 const parseBody = (body: unknown): SearchCandidate[] => {
   let data: unknown = body
   if (typeof data === 'string') {
     try {
-      data = JSON.parse(data)
+      data = JSON.parse(data) as unknown
     } catch {
       return []
     }
   }
   if (!Array.isArray(data)) return []
-  return data.map((item): SearchCandidate => {
+  return (data as unknown[]).map((item) => {
     const raw = (item ?? {}) as Record<string, unknown>
     const artistRaw = raw.artist
     const artist = Array.isArray(artistRaw)
-      ? artistRaw.map((a) => String(a))
-      : artistRaw == null || artistRaw === ''
-        ? []
-        : [String(artistRaw)]
+      ? (artistRaw as unknown[]).map(toText).filter((name) => name.length > 0)
+      : toText(artistRaw)
+        ? [toText(artistRaw)]
+        : []
     return {
-      id: String(raw.id ?? ''),
-      name: String(raw.name ?? ''),
+      id: toText(raw.id),
+      name: toText(raw.name),
       artist,
-      album: String(raw.album ?? ''),
-      source: String(raw.source ?? ''),
+      album: toText(raw.album),
+      source: toText(raw.source),
     }
   })
 }
 
 const buildUrl = (opts: SearchOptions): string => {
-  const params = new URLSearchParams({
-    types: 'search',
-    source: opts.source,
-    name: opts.keyword,
-    count: String(opts.count ?? DEFAULT_COUNT),
-    pages: '1',
-  })
-  return `${opts.apiBase}?${params.toString()}`
+  const parts = [
+    ['types', 'search'],
+    ['source', opts.source],
+    ['name', opts.keyword],
+    ['count', String(opts.count ?? DEFAULT_COUNT)],
+    ['pages', '1'],
+  ]
+  const query = parts.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&')
+  return `${opts.apiBase}?${query}`
 }
 
 export const searchMusic = async (opts: SearchOptions): Promise<SearchCandidate[]> => {
@@ -64,7 +77,7 @@ export const searchMusic = async (opts: SearchOptions): Promise<SearchCandidate[
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
       const resp = await opts.fetcher(url)
-      if (resp.statusCode != null && resp.statusCode !== 200) {
+      if (resp.statusCode != null && resp.statusCode !== OK_STATUS) {
         throw new Error(`search request failed: ${resp.statusCode}`)
       }
       return parseBody(resp.body)

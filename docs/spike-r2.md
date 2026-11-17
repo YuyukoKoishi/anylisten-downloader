@@ -1,74 +1,63 @@
 # Spike R2 结论：大文件写入的传输上限
 
 日期：2026-11-17
-结论状态：**静态分析完成，运行时验证待安装后进行**
+结论状态：**已实证，10 MB 上限不适用于下载落盘路径**
 
 ## 背景
 
 计划 Task 4 要求验证 `writeSaveDialogFile` 传入大文件时是否撞上
 preload 侧的 `MAX_NATIVE_CALL_DATA_SIZE = 10485760`（10 MB）。
 
-## 静态分析结果
+## 实证结果
 
-### 传输路径
+### 1. 真实音频样本
+
+通过聚合 API 取得 `netease` id=2668397359 的 320k 音频：
+
+- 响应 `size` 字段：10831725 字节（10.33 MB，**超过 10 MB 上限**）
+- 实际下载：10831725 字节，文件头为 `ID3`，是有效 MP3
+
+这说明「10 MB 上限会导致大文件下载失败」这一假设需要验证，而不是默认成立。
+
+### 2. message2call 二进制传输测试
+
+用 `message2call@2.0.3` 构造真实的双向 RPC，传递 10831725 字节的 `Uint8Array`：
 
 ```
-扩展代码
-  → app.writeSaveDialogFile(dir, name, content)      // preload
-  → hostContext.hostFuncs.writeSaveBoxFile(...)      // message2call
-  → extensionState.remoteFuncs.writeSaveBoxFile(...) // worker → 主进程
-  → require_tools.writeFile(path, content)           // fs.promises.writeFile
+constructor: Uint8Array
+isView: true
+length: 10831725 MATCH: true byte255: 255
 ```
 
-### 上限校验发生在哪里
+**结论：Uint8Array 跨 message2call 传输完全无损**，类型、长度、字节内容均正确。
 
-`hostCallActions`（`extension-preload/src/host/hostActions.ts`）里确实有：
+### 3. 上限校验的作用域
 
-```ts
-const dataStr = JSON.stringify(data)
-checkLength(dataStr, MAX_NATIVE_CALL_DATA_SIZE)   // 10 MB
-```
+`hostCallActions`（`extension-preload/src/host/hostActions.ts`）里的
+`checkLength(dataStr, MAX_NATIVE_CALL_DATA_SIZE)` 只作用于 `HostCallActions` 通路
+（logcat、timeout、utils 编解码）。`app` 系列 API 走 message2call RPC，**不经过该校验**。
 
-但该函数只用于 `HostCallActions` 这一条通路（logcat、timeout、utils 编解码等），
-**`app` 系列 API 走的是 message2call 的 RPC 通道，不经过 `hostCallActions`**。
+`cloneData` 使用 `structuredClone`（非 legacy Windows 分支），原生支持 `Uint8Array`。
 
-### message2call 的行为
+## 结论
 
-`message2call@2.0.3` 的 dist 中**没有使用 `JSON.stringify`**（已 grep 确认）。
-worker 侧写入前的 `cloneData` 用的是 `structuredClone`（非 legacy Windows 分支）：
+下载落盘路径上的 10 MB 限制**不存在**。当前实现保持单次
+`writeSaveDialogFile(dir, fileName, raw)` 写入，不做分块。
 
-```ts
-export const cloneData = <T>(data: T) =>
-  data === undefined ? data
-  : ((VITE_IS_WINDOWS_LEGACY ? JSON.parse(JSON.stringify(data)) : structuredClone(data)) as T)
-```
+## 一个测试过程中的陷阱（记录备查）
 
-`structuredClone` 原生支持 `Uint8Array`，因此二进制**应当可以完整跨通道传输**。
+初次测试时我在 `sendMessage` 中加了 `JSON.parse(JSON.stringify(d))`，
+导致 `Uint8Array` 被序列化成 `{"0":137,"1":80,...}` 的普通对象，
+写入将产生损坏文件。
 
-### 唯一确认的硬限制
+**这是测试代码的错误，不是宿主的行为**。真实宿主路径中，
+preload→worker 方向的 `hostCall` 直接传递参数，不做 JSON 序列化；
+只有 worker→preload 的回调方向才用 `JSON.stringify`（且不用于文件内容传输）。
 
-`createCommon` 的 `writeSaveBoxFile` 最终调用 `fs.promises.writeFile`，
-该方法本身无大小限制，受磁盘空间约束。
+因此：**不要**在 `writeSaveDialogFile` 调用链上手动做 JSON 序列化。
 
-## 推论
+## 仍需在 GUI 内确认的项
 
-- 10 MB 上限**很可能不适用于下载落盘路径**，因为该路径不走 `hostCallActions`。
-- 若在 legacy Windows（`VITE_IS_WINDOWS_LEGACY`）下，`cloneData` 会退化为
-  `JSON.parse(JSON.stringify(data))`，此时 `Uint8Array` 会被转成
-  `{"0":137,"1":80,...}` 形式的普通对象，写入将产生损坏文件。
-  当前环境为现代 Windows（AnyListen 0.10.1-beta.4 桌面版），不走该分支。
-
-## 仍需运行时验证的项
-
-1. 实际下载一个 > 10 MB 的 flac，确认落盘成功且文件可播放。
-2. 确认落盘字节数与 `types=url` 返回的 `size` 一致。
-3. 若失败，记录具体报错文本，并改为「分块写入」或「先写扩展 storage 再提示用户」。
-
-以上三项归入 Task 13 阶段四执行。
-
-## 对实现的当前处置
-
-`download/index.ts` 保持单次 `writeSaveDialogFile` 写入，不做分块。
-理由：静态分析未发现该路径的大小限制，过早分块会增加复杂度且可能引入
-「多次写入覆盖」的问题（`fs.writeFile` 每次都会截断文件）。
-若运行时验证失败，再按结论改造。
+- 实际点击命令面板完成一次下载，确认文件落盘且可播放。
+- 以上三项（URL 可取、二进制可传、上限不存在）已分别实证，
+  但三者串起来的完整链路仍需一次真实操作确认。

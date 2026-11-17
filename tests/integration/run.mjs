@@ -28,7 +28,7 @@ const makeHost = (opts = {}) => {
     logcat: { info: () => {}, error: (...a) => calls.push(['ext.error', String(a.join(' ')).slice(0, 120)]), warn: () => {}, debug: () => {} },
     registerResourceAction: (a) => { host.__RA = a },
     request: async (url, ropts) => {
-      calls.push(['request', url.slice(0, 60), !!ropts?.needRaw])
+      calls.push(['request', url.slice(0, 200), !!ropts?.needRaw])
       if (opts.requestOverride) return opts.requestOverride(url, ropts)
       if (ropts?.needRaw) {
         const isCover = url.includes('cover') || url.includes('big')
@@ -275,6 +275,17 @@ for (const q of ['128k', '320k', 'flac', 'flac24bit']) {
   await commands.get('downloadMusic')()
   const searching = calls.find((c) => c[0] === 'msg' && String(c[1]).includes('searching'))
   check('搜索前给出非模态提示', !!searching, JSON.stringify(calls.filter((c) => c[0] === 'msg').map((c) => c[1])))
+}
+
+{
+  const { host, calls, commands } = makeHost({ inputs: ['晴天 周杰伦'] })
+  runBundle(host, undefined, {})
+  await new Promise((r) => setTimeout(r, 250))
+  await commands.get('downloadMusic')()
+  const searches = calls.filter((c) => c[0] === 'request' && !c[2] && String(c[1]).includes('types=search'))
+  const first = searches[0]
+  check('首屏只请求 10 条', first && decodeURIComponent(String(first[1])).includes('count=10'), first ? first[1] : 'none')
+  check('首屏不预先请求第二页', searches.every((s) => !decodeURIComponent(String(s[1])).includes('pages=2')), 'prefetched page 2')
 }
 
 const failed = results.filter((r) => !r.pass)

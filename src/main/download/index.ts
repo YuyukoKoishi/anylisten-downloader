@@ -15,7 +15,9 @@ const DEFAULT_API_BASE = 'https://music-api.gdstudio.xyz/api.php'
 const DEFAULT_QUALITY = '320k'
 const DEFAULT_TEMPLATE = '{name} - {singer}'
 const DEFAULT_SOURCE = 'netease'
-const DEFAULT_COUNT = 20
+// 首屏只取 10 条：检索耗时随条数递增，先给用户能选的候选。
+// 翻到最后一页时再按需拉取下一页。
+const FIRST_PAGE_COUNT = 10
 const DOWNLOAD_TIMEOUT_MS = 300_000
 
 interface DownloadConfig {
@@ -67,10 +69,18 @@ const readConfig = async (): Promise<DownloadConfig> => {
 
 const buildKeyword = (name: string, singer: string): string => (singer ? `${name} ${singer}` : name)
 
-const pickCandidate = async (list: SearchCandidate[], initialPage = 0): Promise<SearchCandidate | null> => {
+type LoadMore = (nextPage: number) => Promise<SearchCandidate[]>
+
+const pickCandidate = async (
+  list: SearchCandidate[],
+  initialPage = 0,
+  loadMore?: LoadMore
+): Promise<SearchCandidate | null> => {
   let page = initialPage
+  let items = list
+  let loadedPages = 1
   for (;;) {
-    const view = paginate(list, page)
+    const view = paginate(items, page)
     const from = view.page * PAGE_SIZE + 1
     const to = view.page * PAGE_SIZE + view.items.length
     const buttons = view.items.map((item, index) => ({
@@ -79,7 +89,9 @@ const pickCandidate = async (list: SearchCandidate[], initialPage = 0): Promise<
 
     const navStart = buttons.length
     const hasPrev = view.page > 0
-    const hasNext = view.page < view.totalPages - 1
+    const atLastLoadedPage = view.page >= loadedPages - 1
+    // 停在最后一页且还能加载时，仍显示「下一页」，点击即按需拉取
+    const hasNext = view.page < view.totalPages - 1 || (atLastLoadedPage && loadMore != null)
     if (hasPrev) buttons.push({ text: t('download.prevPage') })
     if (hasNext) buttons.push({ text: t('download.nextPage') })
     buttons.push({ text: t('download.cancel') })
@@ -102,7 +114,19 @@ const pickCandidate = async (list: SearchCandidate[], initialPage = 0): Promise<
       cursor++
     }
     if (hasNext && selected === cursor) {
-      page = view.page + 1
+      const targetPage = view.page + 1
+      // 目标页超出已加载范围时按需拉取
+      if (targetPage >= loadedPages && loadMore != null) {
+        const more = await loadMore(loadedPages + 1)
+        if (more.length === 0) {
+          // 没有更多结果了，留在当前页并提示
+          void app.showMessage(t('download.noResult'), { type: 'info' })
+          continue
+        }
+        items = [...items, ...more]
+        loadedPages++
+      }
+      page = targetPage
       continue
     }
     return null
@@ -227,7 +251,7 @@ export const downloadMusic = async (): Promise<void> => {
       apiBase: config.apiBase,
       source: config.searchSource,
       keyword: buildKeyword(query.name, query.singer),
-      count: DEFAULT_COUNT,
+      count: FIRST_PAGE_COUNT,
       fetcher: async (url) => request(url),
     })
   } catch (error) {
@@ -242,7 +266,17 @@ export const downloadMusic = async (): Promise<void> => {
     return
   }
 
-  const picked = await pickCandidate(ranked)
+  const picked = await pickCandidate(ranked, 0, async (nextPage) => {
+    const more = await searchMusic({
+      apiBase: config.apiBase,
+      source: config.searchSource,
+      keyword: buildKeyword(query.name, query.singer),
+      count: FIRST_PAGE_COUNT,
+      pages: nextPage,
+      fetcher: async (url) => request(url),
+    })
+    return rankCandidates(more, query.singer)
+  })
   if (picked == null) return
 
   try {

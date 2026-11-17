@@ -7,6 +7,8 @@ export interface SearchOptions {
   source: string
   keyword: string
   count?: number
+  /** 结果页码，从 1 开始 */
+  pages?: number
   fetcher: Fetcher
   sleep?: (ms: number) => Promise<void>
 }
@@ -65,7 +67,7 @@ const buildUrl = (opts: SearchOptions): string => {
     ['source', opts.source],
     ['name', opts.keyword],
     ['count', String(opts.count ?? DEFAULT_COUNT)],
-    ['pages', '1'],
+    ['pages', String(opts.pages ?? 1)],
   ]
   const query = parts.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&')
   return `${opts.apiBase}?${query}`

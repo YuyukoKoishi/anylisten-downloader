@@ -1,4 +1,4 @@
-# LX Music API Source Downloader
+# LX音源兼容
 
 AnyListen 扩展：加载 LX Music 自定义源脚本，并按歌名搜索下载歌曲。
 
@@ -43,6 +43,7 @@ AnyListen 扩展：加载 LX Music 自定义源脚本，并按歌名搜索下载
 - 搜索目前仅支持网易云：聚合 API 只接受 `source=netease` 与 `source=joox`，
   而 LX 音源脚本支持 `kw/kg/tx/wy/mg`，两者交集只有 `netease → wy`。
 - 不支持批量下载、断点续传。
+- 完成提示只显示文件名、音质、大小，不提供「打开所在文件夹」动作。
 - 候选列表为原生对话框按钮形式，不是富文本列表。
 - 输入歌名后需等待约 1 秒搜索（网络开销），期间界面无进度提示。
 

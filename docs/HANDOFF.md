@@ -3,6 +3,7 @@
 ## 产物
 
 - 构建产物：`build/lx-api-source-downloader_v0.1.0.alix`
+- 扩展显示名称：**LX音源兼容**
 - 扩展 id：`lx-api-source-downloader`
 - 目标引擎：`1.4.0`（宿主 AnyListen `0.10.1-beta.4`）
 
@@ -72,7 +73,7 @@ src/main/download/
 2. 聚合 API 只支持 `netease`，若该平台接口变动，下载功能会整体失效。
    API 地址可在设置中修改。
 3. 双扩展（原版 + 本版）同时声明 `musicUrl` 资源，宿主选择 provider 的顺序
-   未验证。若播放行为异常，可先禁用其中一个。
+   未验证。**若播放行为异常，处置为禁用原插件、保留本扩展**——已确认优先保下载功能。
 
 ## 文档索引
 

@@ -4,7 +4,7 @@ import pkg from './package.json' with { type: 'json' }
 
 const config: ExtensionConfig = {
   id: 'lx-api-source-downloader',
-  name: 'LX Music API Source Downloader',
+  name: 'LX音源兼容',
   description: '{description}',
   version: pkg.version,
   homepage: pkg.homepage,

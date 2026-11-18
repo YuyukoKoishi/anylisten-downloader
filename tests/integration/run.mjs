@@ -156,7 +156,8 @@ const check = (name, cond, detail) => {
   await new Promise((r) => setTimeout(r, 250))
   await commands.get('downloadMusic')()
   const searches = calls.filter((c) => c[0] === 'request' && !c[2]).length
-  check('非 200 重试 3 次', searches === 3, 'tries=' + searches)
+  // 首次 + 3 次重试 = 4 次请求
+  check('非 200 重试 3 次', searches === 4, 'tries=' + searches)
 }
 
 // ---- 阶段三：候选与分页 ----

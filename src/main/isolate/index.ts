@@ -112,6 +112,17 @@ export const scripts: Array<{
   info: LXScriptInfoFull
 }> = []
 
+// 取所有已启用脚本声明的平台并集（去重）。
+// 脚本 inited 时上报 sources，键即 LX source（wy/tx/kg/kw/mg/qs）。
+export const getEnabledSources = (): string[] => {
+  const set = new Set<string>()
+  for (const script of scripts) {
+    if (!script.sources) continue
+    for (const key of Object.keys(script.sources)) set.add(key)
+  }
+  return [...set]
+}
+
 export const runScript = async (id: string, scriptInfo: LXScriptInfoFull, script: string, enabledSourceLogout: boolean) => {
   const isolate = await createIsolate(scriptInfo)
   await isolate.remote.setEnabledSourceLogout(enabledSourceLogout)

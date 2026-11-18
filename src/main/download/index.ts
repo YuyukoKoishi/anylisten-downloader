@@ -1,5 +1,6 @@
 import { app, command, configuration, console, request, t } from '../shared/hostAPI'
-import { getMusicUrlWithQuality } from '../isolate'
+import { getEnabledSources, getMusicUrlWithQuality } from '../isolate'
+import { toApiSource } from './platforms.ts'
 import { paginate, describeCandidate, rankCandidates, PAGE_SIZE } from './candidates'
 import { buildFileName, formatSize, inferExtension } from './fileName'
 import { fetchCoverFromApi, fetchLyricFromApi } from './media'
@@ -147,7 +148,7 @@ const collectMetadata = async (
 
   if (config.embedCover) {
     // 直接走聚合 API 的 pic 端点，不依赖音源脚本是否实现 pic 动作
-    const result = await fetchCoverFromApi(config.apiBase, config.searchSource, picId, apiFetcher)
+    const result = await fetchCoverFromApi(config.apiBase, candidate.source, picId, apiFetcher)
     if (result.kind === 'ok') {
       payload.cover = result.cover
     } else if (result.reason === 'tooLarge') {
@@ -158,7 +159,7 @@ const collectMetadata = async (
   }
 
   if (config.embedLyric) {
-    const lyric = await fetchLyricFromApi(config.apiBase, config.searchSource, lyricId, apiFetcher)
+    const lyric = await fetchLyricFromApi(config.apiBase, candidate.source, lyricId, apiFetcher)
     if (lyric == null) {
       notes.push(t('download.lyricMissing'))
     } else {
@@ -245,11 +246,16 @@ export const downloadMusic = async (): Promise<void> => {
   // showMessage 不传 modal 时走 notify 通道，不阻塞。
   void app.showMessage(t('download.searching'), { type: 'info' })
 
+  // 跟随启用的音源脚本平台：读 scripts[].sources 键并集，映射回 API source。
+  // 本期数据源仅网易云可用，故只取第一个平台搜索；多平台数据源接入后遍历全部。
+  const enabledSources = getEnabledSources().map(toApiSource)
+  const searchSource = enabledSources.length > 0 ? enabledSources[0] : DEFAULT_SOURCE
+
   let candidates: SearchCandidate[]
   try {
     candidates = await searchMusic({
       apiBase: config.apiBase,
-      source: config.searchSource,
+      source: searchSource,
       keyword: buildKeyword(query.name, query.singer),
       count: FIRST_PAGE_COUNT,
       fetcher: async (url) => request(url),
@@ -269,7 +275,7 @@ export const downloadMusic = async (): Promise<void> => {
   const picked = await pickCandidate(ranked, 0, async (nextPage) => {
     const more = await searchMusic({
       apiBase: config.apiBase,
-      source: config.searchSource,
+      source: searchSource,
       keyword: buildKeyword(query.name, query.singer),
       count: FIRST_PAGE_COUNT,
       pages: nextPage,

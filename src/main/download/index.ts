@@ -266,7 +266,7 @@ export const downloadMusic = async (): Promise<void> => {
     return
   }
 
-  const ranked = rankCandidates(candidates, query.singer)
+  const ranked = rankCandidates(candidates, query)
   if (ranked.length === 0) {
     void app.showMessage(t('download.noResult'), { type: 'info' })
     return
@@ -281,7 +281,7 @@ export const downloadMusic = async (): Promise<void> => {
       pages: nextPage,
       fetcher: async (url) => request(url),
     })
-    return rankCandidates(more, query.singer)
+    return rankCandidates(more, query)
   })
   if (picked == null) return
 

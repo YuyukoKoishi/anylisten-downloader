@@ -13,20 +13,42 @@ const make = (id: string, name: string, artist: string[], album = '') => ({
 
 test('sorts matching singer first and keeps stable order otherwise', () => {
   const list = [make('1', '晴天', ['RyaVocal']), make('2', '晴天', ['周杰伦'], '叶惠美')]
-  const out = rankCandidates(list, '周杰伦')
+  const out = rankCandidates(list, { name: '晴天', singer: '周杰伦' })
   assert.equal(out[0].id, '2')
   assert.equal(out[1].id, '1')
 })
 
 test('singer match is case insensitive and ignores full width', () => {
   const list = [make('1', 'x', ['ＡＢＣ']), make('2', 'x', ['abc'])]
-  const out = rankCandidates(list, 'abc')
+  const out = rankCandidates(list, { name: 'x', singer: 'abc' })
   assert.equal(out[0].id, '1')
 })
 
 test('keeps all candidates when singer is empty', () => {
   const list = [make('1', 'a', ['x']), make('2', 'b', ['y'])]
-  assert.deepEqual(rankCandidates(list, '').map((c) => c.id), ['1', '2'])
+  assert.deepEqual(rankCandidates(list, { name: '', singer: '' }).map((c) => c.id), ['1', '2'])
+})
+
+test('exact name match outranks cover when singer field is unreliable', () => {
+  // 原曲歌手被标成 RyaVocal（API 缺陷），但歌名「晴天」完全匹配且无版本字符；
+  // 翻唱歌名带「(女声版)」等版本字符。期望原曲排最前。
+  const list = [
+    make('1', '晴天 (女声版)', ['GYBeat']),
+    make('2', '晴天', ['RyaVocal'], '叶惠美'),
+    make('3', '晴天 (DJ版)', ['DJ阿罗']),
+  ]
+  const out = rankCandidates(list, { name: '晴天', singer: '周杰伦' })
+  assert.equal(out[0].id, '2')
+})
+
+test('name plus singer match ranks above name-only match', () => {
+  const list = [
+    make('1', '晴天', ['翻唱者']),
+    make('2', '晴天', ['周杰伦'], '叶惠美'),
+  ]
+  const out = rankCandidates(list, { name: '晴天', singer: '周杰伦' })
+  assert.equal(out[0].id, '2')
+  assert.equal(out[1].id, '1')
 })
 
 test('paginates with page size five', () => {

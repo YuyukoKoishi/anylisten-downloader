@@ -32,6 +32,7 @@ test('returns empty array when body is a non-array object', async () => {
 })
 
 test('retries three times with backoff then throws', async () => {
+  // 首次 + 3 次重试 = 4 次请求；退避 1s / 2s / 4s
   const waits: number[] = []
   let calls = 0
   const fetcher = async () => {
@@ -39,8 +40,8 @@ test('retries three times with backoff then throws', async () => {
     throw new Error('503')
   }
   await assert.rejects(searchMusic({ ...base, fetcher, sleep: async (ms) => { waits.push(ms) } }))
-  assert.equal(calls, 3)
-  assert.deepEqual(waits, [1000, 2000])
+  assert.equal(calls, 4)
+  assert.deepEqual(waits, [1000, 2000, 4000])
 })
 
 test('succeeds on second attempt without extra waits', async () => {

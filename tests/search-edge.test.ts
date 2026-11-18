@@ -11,7 +11,7 @@ test('non-200 status triggers retry then throws', async () => {
   let calls = 0
   const fetcher = async () => { calls++; return { statusCode: 500, body: [] } }
   await assert.rejects(searchMusic({ ...base, fetcher, sleep: noSleep }))
-  assert.equal(calls, 3)
+  assert.equal(calls, 4)
 })
 
 // 缺陷：404 也应重试（不应当作空结果）
@@ -19,7 +19,7 @@ test('404 triggers retry', async () => {
   let calls = 0
   const fetcher = async () => { calls++; return { statusCode: 404, body: null } }
   await assert.rejects(searchMusic({ ...base, fetcher, sleep: noSleep }))
-  assert.equal(calls, 3)
+  assert.equal(calls, 4)
 })
 
 // 空数组是合法结果，不应重试

@@ -13,7 +13,9 @@ export interface SearchOptions {
   sleep?: (ms: number) => Promise<void>
 }
 
-const MAX_ATTEMPTS = 3
+// PRD FR-3：失败后最多重试 3 次，指数退避 1s / 2s / 4s。
+// 首次尝试 + 3 次重试 = 4 次请求。
+const MAX_ATTEMPTS = 4
 const BACKOFF_BASE_MS = 1000
 const DEFAULT_COUNT = 20
 const OK_STATUS = 200
@@ -87,6 +89,7 @@ export const searchMusic = async (opts: SearchOptions): Promise<SearchCandidate[
       return parseBody(resp.body)
     } catch (error) {
       lastError = error
+      // 每次失败后都退避，最后一次失败不再等待
       if (attempt < MAX_ATTEMPTS - 1) await sleep(BACKOFF_BASE_MS * 2 ** attempt)
     }
   }

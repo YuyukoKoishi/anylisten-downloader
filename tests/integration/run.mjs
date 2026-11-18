@@ -289,6 +289,40 @@ for (const q of ['128k', '320k', 'flac', 'flac24bit']) {
   check('首屏不预先请求第二页', searches.every((s) => !decodeURIComponent(String(s[1])).includes('pages=2')), 'prefetched page 2')
 }
 
+// ---- 三期：musicSearch action 与跟随音源 ----
+{
+  const { host } = makeHost({ inputs: ['晴天 周杰伦'] })
+  runBundle(host)
+  await new Promise((r) => setTimeout(r, 250))
+  check('musicSearch action 已注册', !!host.__RA && typeof host.__RA.musicSearch === 'function', JSON.stringify(Object.keys(host.__RA || {})))
+}
+{
+  // 启用 wy 脚本：搜索 source 应为 netease（LX wy 映射到 API netease）
+  const { host, calls, commands } = makeHost({ inputs: ['晴天 周杰伦'], requestOverride: async (url, o) => {
+    if (o?.needRaw) return { statusCode: 200, raw: new Uint8Array([73,68,51]), body: null, headers: {}, history: [url] }
+    return { statusCode: 200, body: [], raw: new Uint8Array(), headers: {}, history: [url] }
+  } })
+  runBundle(host, { wy: ['128k','320k'] })
+  await new Promise((r) => setTimeout(r, 250))
+  await commands.get('downloadMusic')()
+  const searches = calls.filter((c) => c[0] === 'request' && !c[2] && String(c[1]).includes('types=search'))
+  const first = searches[0]
+  check('启用 wy 脚本时搜索 source=netease', first && decodeURIComponent(String(first[1])).includes('source=netease'), first ? first[1] : 'none')
+}
+{
+  // 启用 tx 脚本（本期不可搜索）：应回退 netease 而非请求不支持的 tencent
+  const { host, calls, commands } = makeHost({ inputs: ['晴天 周杰伦'], requestOverride: async (url, o) => {
+    if (o?.needRaw) return { statusCode: 200, raw: new Uint8Array([73,68,51]), body: null, headers: {}, history: [url] }
+    return { statusCode: 200, body: [], raw: new Uint8Array(), headers: {}, history: [url] }
+  } })
+  runBundle(host, { tx: ['128k','320k'] })
+  await new Promise((r) => setTimeout(r, 250))
+  await commands.get('downloadMusic')()
+  const searches = calls.filter((c) => c[0] === 'request' && !c[2] && String(c[1]).includes('types=search'))
+  const first = searches[0]
+  check('启用 tx 脚本时回退 netease 搜索', first && decodeURIComponent(String(first[1])).includes('source=netease'), first ? first[1] : 'none')
+}
+
 const failed = results.filter((r) => !r.pass)
 
 console.log('')

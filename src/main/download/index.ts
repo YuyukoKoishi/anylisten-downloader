@@ -1,6 +1,6 @@
 import { app, command, configuration, console, request, t } from '../shared/hostAPI'
 import { getEnabledSources, getMusicUrlWithQuality } from '../isolate'
-import { toApiSource } from './platforms.ts'
+import { toSearchableApiSources } from './platforms.ts'
 import { paginate, describeCandidate, rankCandidates, PAGE_SIZE } from './candidates'
 import { buildFileName, formatSize, inferExtension } from './fileName'
 import { fetchCoverFromApi, fetchLyricFromApi } from './media'
@@ -248,7 +248,7 @@ export const downloadMusic = async (): Promise<void> => {
 
   // 跟随启用的音源脚本平台：读 scripts[].sources 键并集，映射回 API source。
   // 本期数据源仅网易云可用，故只取第一个平台搜索；多平台数据源接入后遍历全部。
-  const enabledSources = getEnabledSources().map(toApiSource)
+  const enabledSources = toSearchableApiSources(getEnabledSources())
   const searchSource = enabledSources.length > 0 ? enabledSources[0] : DEFAULT_SOURCE
 
   let candidates: SearchCandidate[]

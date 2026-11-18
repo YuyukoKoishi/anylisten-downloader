@@ -22,3 +22,11 @@ export const toLxSource = (apiSource: string): string => API_TO_LX_SOURCE[apiSou
 
 /** LX source 映射到 API source；未知 source 原样返回 */
 export const toApiSource = (lxSource: string): string => LX_TO_API_SOURCE[lxSource] ?? lxSource
+
+// 本期可搜索的 API source 白名单：聚合 API 仅支持网易云搜索。
+// 多平台搜索数据源接入后，把对应 source 加进来即可。
+export const SEARCHABLE_API_SOURCES: string[] = ['netease']
+
+/** 从启用的 LX source 集合里筛出本期可搜索的平台（映射回 API source） */
+export const toSearchableApiSources = (lxSources: string[]): string[] =>
+  lxSources.map(toApiSource).filter((api) => SEARCHABLE_API_SOURCES.includes(api))
